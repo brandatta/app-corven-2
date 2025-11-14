@@ -10,7 +10,7 @@ import base64
 import io
 import string
 
-st.set_page_config(page_title="Subida CSV/XLSX → corven.crudo_ap", layout="centered")
+st.set_page_config(page_title="Input FBL1N", layout="centered")
 
 # ---- Logo a base64 (opcional) ----
 def get_base64_logo(path="logorelleno.png"):
