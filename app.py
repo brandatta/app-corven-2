@@ -42,6 +42,19 @@ st.markdown("""
     button[kind="primary"]:hover { background-color:#4f2923 !important; border-color:#4f2923 !important; }
     .stAlert[data-baseweb="alert"] { background-color:#f6fff0; color:#64352c !important; font-weight:bold; }
     label, .stSelectbox label, .stFileUploader label { color:#64352c !important; }
+
+    .btn-red-info {
+        background-color:#b91c1c;
+        color:white;
+        border:none;
+        padding:0.5rem 1rem;
+        border-radius:0.25rem;
+        font-weight:bold;
+        cursor:default;
+    }
+    .btn-red-info:disabled {
+        opacity:0.9;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -152,14 +165,20 @@ if uploaded_file:
                 LINES TERMINATED BY '\\n';
                 """
                 cur.execute(load_sql)
-                conn.commit()
 
-                # 3) Limpieza post-carga
+                # 3) Contar filas con FechaDoc inconsistente (0000-00-00) ANTES del delete
+                cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
+                retenidas = cur.fetchone()[0]
+
+                # 4) Limpieza post-carga
                 cur.execute("DELETE FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
 
                 conn.commit()
 
-                # Contar filas cargadas
+                # Guardar el número de filas retenidas en session_state para mostrarlo en el botón rojo
+                st.session_state["filas_inconsistentes"] = retenidas
+
+                # Contar filas cargadas finales
                 cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap`;")
                 total = cur.fetchone()[0]
 
@@ -176,3 +195,16 @@ if uploaded_file:
 
         except Exception as e:
             st.error(f"Error durante la carga: {e}")
+
+    # Botón rojo informativo debajo del botón verde
+    if "filas_inconsistentes" in st.session_state:
+        st.markdown(
+            f"""
+            <div style="margin-top:10px;">
+                <button class="btn-red-info" disabled>
+                    Filas retenidas por información inconsistente: {st.session_state["filas_inconsistentes"]}
+                </button>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
