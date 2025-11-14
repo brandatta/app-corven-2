@@ -154,6 +154,11 @@ if uploaded_file:
                 cur.execute(load_sql)
                 conn.commit()
 
+                # 3) Limpieza post-carga
+                cur.execute("DELETE FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
+
+                conn.commit()
+
                 # Contar filas cargadas
                 cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap`;")
                 total = cur.fetchone()[0]
