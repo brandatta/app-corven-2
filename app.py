@@ -56,7 +56,7 @@ if logo_b64:
 else:
     st.markdown("""
     <div class="header-container">
-        <div class="header-title">Subida de CSV/XLSX → <strong>corven.crudo_ap</strong></div>
+        <div class="header-title">Input FBL1N</div>
     </div>
     """, unsafe_allow_html=True)
 
