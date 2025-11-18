@@ -116,7 +116,7 @@ if uploaded_file:
         # para xlsx sin encabezados
         df = pd.read_excel(uploaded_file, header=None)  # requiere openpyxl
 
-    # Renombrar columnas: a, b, c, ..., n, ...
+    # Renombrar columnas: a, b, c, ..., o, ...
     df.columns = gen_colnames(df.shape[1])
 
     # -------------------- FILTRAR FILAS SIN SOCIEDAD (columna 'a') --------------------
@@ -139,18 +139,21 @@ if uploaded_file:
         st.write("Vista previa del archivo (ya filtrado sin filas sin Sociedad):")
         st.dataframe(df.head(100), use_container_width=True)
 
-        # Métricas inmediatas: filas y suma(columna 'n')
-        if 'n' in df.columns:
-            suma_n = pd.to_numeric(df['n'], errors='coerce').sum()
+        # Métricas inmediatas: filas y suma(columna 'o')
+        if 'o' in df.columns:
+            suma_o = pd.to_numeric(df['o'], errors='coerce').sum()
             st.markdown(
                 f"<div style='color:#64352c; font-weight:bold; margin:10px 0;'>"
                 f"Filas válidas (con Sociedad): <strong>{total_filas}</strong> &nbsp;|&nbsp; "
-                f"Suma de <strong>n</strong>: <strong>{suma_n:.2f}</strong>"
+                f"Suma de <strong>o</strong>: <strong>{suma_o:.2f}</strong>"
                 f"</div>",
                 unsafe_allow_html=True
             )
         else:
-            st.error("No se encontró la columna **n** en el archivo. Revisá que el archivo tenga al menos 14 columnas (… m, **n**, o…).")
+            st.error(
+                "No se encontró la columna **o** en el archivo. "
+                "Revisá que el archivo tenga al menos 15 columnas (… n, **o**, …)."
+            )
 
         # Confirmación
         if st.button("Subir y Actualizar Repositorio", type="primary"):
