@@ -119,82 +119,97 @@ if uploaded_file:
     # Renombrar columnas: a, b, c, ..., n, ...
     df.columns = gen_colnames(df.shape[1])
 
-    # Vista previa
-    st.write("Vista previa del archivo:")
-    st.dataframe(df.head(100), use_container_width=True)
+    # -------------------- FILTRAR FILAS SIN SOCIEDAD (columna 'a') --------------------
+    total_filas_original = len(df)
 
-    # Métricas inmediatas: filas y suma(columna 'n')
+    # Nos quedamos solo con filas donde 'a' tenga algún valor no vacío
+    df = df[df['a'].notna() & (df['a'].astype(str).str.strip() != "")]
+    df.reset_index(drop=True, inplace=True)
+
     total_filas = len(df)
-    if 'n' in df.columns:
-        suma_n = pd.to_numeric(df['n'], errors='coerce').sum()
-        st.markdown(
-            f"<div style='color:#64352c; font-weight:bold; margin:10px 0;'>"
-            f"Filas detectadas: <strong>{total_filas}</strong> &nbsp;|&nbsp; "
-            f"Suma de <strong>n</strong>: <strong>{suma_n:.2f}</strong>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+    filtradas = total_filas_original - total_filas
+
+    if filtradas > 0:
+        st.warning(f"Se eliminaron {filtradas} filas sin Sociedad en la primera columna (columna 'a').")
+
+    if df.empty:
+        st.error("Luego de eliminar filas sin Sociedad, el archivo quedó vacío. Revisá el archivo de origen.")
     else:
-        st.error("No se encontró la columna **n** en el archivo. Revisá que el archivo tenga al menos 14 columnas (… m, **n**, o…).")
+        # Vista previa
+        st.write("Vista previa del archivo (ya filtrado sin filas sin Sociedad):")
+        st.dataframe(df.head(100), use_container_width=True)
 
-    # Confirmación
-    if st.button("Subir y Actualizar Repositorio", type="primary"):
-        try:
-            if df.empty:
-                st.warning("El archivo no tiene filas.")
-            else:
-                # Guardar CSV temporal sin encabezados (importa por posición)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", encoding="utf-8", newline="\n") as tmp:
-                    df.to_csv(tmp.name, index=False, header=False)
-                    temp_path = tmp.name
+        # Métricas inmediatas: filas y suma(columna 'n')
+        if 'n' in df.columns:
+            suma_n = pd.to_numeric(df['n'], errors='coerce').sum()
+            st.markdown(
+                f"<div style='color:#64352c; font-weight:bold; margin:10px 0;'>"
+                f"Filas válidas (con Sociedad): <strong>{total_filas}</strong> &nbsp;|&nbsp; "
+                f"Suma de <strong>n</strong>: <strong>{suma_n:.2f}</strong>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.error("No se encontró la columna **n** en el archivo. Revisá que el archivo tenga al menos 14 columnas (… m, **n**, o…).")
 
-                # Conectar a MySQL
-                conn = open_connection()
-                cur = conn.cursor()
+        # Confirmación
+        if st.button("Subir y Actualizar Repositorio", type="primary"):
+            try:
+                if df.empty:
+                    st.warning("El archivo no tiene filas válidas para cargar (todas fueron filtradas).")
+                else:
+                    # Guardar CSV temporal sin encabezados (importa por posición)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", encoding="utf-8", newline="\n") as tmp:
+                        df.to_csv(tmp.name, index=False, header=False)
+                        temp_path = tmp.name
 
-                # 1) TRUNCATE
-                cur.execute("TRUNCATE TABLE `corven`.`crudo_ap`;")
+                    # Conectar a MySQL
+                    conn = open_connection()
+                    cur = conn.cursor()
 
-                # 2) LOAD DATA LOCAL INFILE (sin IGNORE 1 ROWS, porque no hay encabezados)
-                csv_path = temp_path.replace("\\", "\\\\")  # por si Windows
-                load_sql = f"""
-                LOAD DATA LOCAL INFILE '{csv_path}'
-                INTO TABLE `corven`.`crudo_ap`
-                CHARACTER SET utf8mb4
-                FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '"'
-                LINES TERMINATED BY '\\n';
-                """
-                cur.execute(load_sql)
+                    # 1) TRUNCATE
+                    cur.execute("TRUNCATE TABLE `corven`.`crudo_ap`;")
 
-                # 3) Contar filas con FechaDoc inconsistente (0000-00-00) ANTES del delete
-                cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
-                retenidas = cur.fetchone()[0]
+                    # 2) LOAD DATA LOCAL INFILE (sin IGNORE 1 ROWS, porque no hay encabezados)
+                    csv_path = temp_path.replace("\\", "\\\\")  # por si Windows
+                    load_sql = f"""
+                    LOAD DATA LOCAL INFILE '{csv_path}'
+                    INTO TABLE `corven`.`crudo_ap`
+                    CHARACTER SET utf8mb4
+                    FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '"'
+                    LINES TERMINATED BY '\\n';
+                    """
+                    cur.execute(load_sql)
 
-                # 4) Limpieza post-carga
-                cur.execute("DELETE FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
+                    # 3) Contar filas con FechaDoc inconsistente (0000-00-00) ANTES del delete
+                    cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
+                    retenidas = cur.fetchone()[0]
 
-                conn.commit()
+                    # 4) Limpieza post-carga
+                    cur.execute("DELETE FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
 
-                # Guardar el número de filas retenidas en session_state para mostrarlo en el botón rojo
-                st.session_state["filas_inconsistentes"] = retenidas
+                    conn.commit()
 
-                # Contar filas cargadas finales
-                cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap`;")
-                total = cur.fetchone()[0]
+                    # Guardar el número de filas retenidas en session_state para mostrarlo en el botón rojo
+                    st.session_state["filas_inconsistentes"] = retenidas
 
-                cur.close()
-                conn.close()
+                    # Contar filas cargadas finales
+                    cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap`;")
+                    total = cur.fetchone()[0]
 
-                # Limpiar archivo temporal
-                try:
-                    os.remove(temp_path)
-                except Exception:
-                    pass
+                    cur.close()
+                    conn.close()
 
-                st.success(f"Carga completada. Filas actuales en `corven`.`crudo_ap`: {total}.")
+                    # Limpiar archivo temporal
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
 
-        except Exception as e:
-            st.error(f"Error durante la carga: {e}")
+                    st.success(f"Carga completada. Filas actuales en `corven`.`crudo_ap`: {total}.")
+
+            except Exception as e:
+                st.error(f"Error durante la carga: {e}")
 
     # Botón rojo informativo debajo del botón verde
     if "filas_inconsistentes" in st.session_state:
