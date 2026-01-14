@@ -116,6 +116,18 @@ def gen_colnames(n_cols: int):
     return names
 
 
+def unique_clean_values(series: pd.Series):
+    """
+    Devuelve lista de valores únicos (sin repetidos), limpios (strip),
+    sin nulos y sin vacíos, ordenados.
+    """
+    s = series.dropna().astype(str).map(lambda x: x.strip())
+    s = s[s != ""]
+    # unique() preserva orden de aparición; luego ordenamos para UI consistente
+    vals = sorted(pd.unique(s))
+    return vals
+
+
 # -------------------- LÓGICA PRINCIPAL --------------------
 uploaded_file = st.file_uploader(
     "Subí tu archivo CSV o XLSX (sin encabezados)", type=["csv", "xlsx"]
@@ -156,28 +168,25 @@ if uploaded_file:
         st.write("Vista previa del archivo (ya filtrado sin filas sin Sociedad):")
         st.dataframe(df.head(100), use_container_width=True)
 
-        # -------------------- EXCLUIR CLIENTES (columna 'b') --------------------
+        # -------------------- EXCLUIR CLIENTES (columna 'b') SIN REPETIDOS --------------------
         clientes_excluir = []
         if "b" in df.columns:
-            # Lista única, limpia y ordenada
-            clientes_unicos = (
-                df["b"].dropna().astype(str).map(lambda x: x.strip())
-            )
-            clientes_unicos = sorted([c for c in clientes_unicos if c != ""])
+            clientes_unicos = unique_clean_values(df["b"])  # <- únicos, sin repetidos
 
             clientes_excluir = st.multiselect(
                 "Clientes a excluir (columna 'b')",
                 options=clientes_unicos,
                 default=[],
-                help="Seleccioná uno o más valores de la columna 'b' para excluirlos de la carga.",
+                help="Seleccioná uno o más valores únicos de la columna 'b' para excluirlos de la carga.",
             )
 
             if clientes_excluir:
+                # contar filas que se excluirían (por ocurrencia en el archivo)
                 filas_excluir = (
                     df["b"].astype(str).str.strip().isin(clientes_excluir)
                 ).sum()
                 st.info(
-                    f"Se excluirán {len(clientes_excluir)} cliente(s). "
+                    f"Se excluirán {len(clientes_excluir)} cliente(s) (sin repetidos en la lista). "
                     f"Filas a excluir: {filas_excluir}"
                 )
         else:
