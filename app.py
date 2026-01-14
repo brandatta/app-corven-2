@@ -25,7 +25,8 @@ def get_base64_logo(path="logorelleno.png"):
 logo_b64 = get_base64_logo()
 
 # ---- Estilos ----
-st.markdown("""
+st.markdown(
+    """
     <style>
     .main { background-color: #d4fdb7 !important; }
     .main > div:first-child { padding-top: 0rem; }
@@ -56,22 +57,30 @@ st.markdown("""
         opacity:0.9;
     }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 # ---- Header ----
 if logo_b64:
-    st.markdown(f"""
-    <div class="header-container">
-        <div class="header-title">Input FBL1N</div>
-        <div class="header-logo"><img src="data:image/png;base64,{logo_b64}" /></div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="header-container">
+            <div class="header-title">Input FBL1N</div>
+            <div class="header-logo"><img src="data:image/png;base64,{logo_b64}" /></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 else:
-    st.markdown("""
-    <div class="header-container">
-        <div class="header-title">Input FBL1N</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="header-container">
+            <div class="header-title">Input FBL1N</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # -------------------- Helpers --------------------
@@ -84,8 +93,9 @@ def open_connection():
         charset="utf8mb4",
         use_unicode=True,
         allow_local_infile=True,
-        client_flags=[ClientFlag.LOCAL_FILES]
+        client_flags=[ClientFlag.LOCAL_FILES],
     )
+
 
 def gen_colnames(n_cols: int):
     """
@@ -105,8 +115,11 @@ def gen_colnames(n_cols: int):
         names.append(s)
     return names
 
+
 # -------------------- LÓGICA PRINCIPAL --------------------
-uploaded_file = st.file_uploader("Subí tu archivo CSV o XLSX (sin encabezados)", type=["csv", "xlsx"])
+uploaded_file = st.file_uploader(
+    "Subí tu archivo CSV o XLSX (sin encabezados)", type=["csv", "xlsx"]
+)
 
 if uploaded_file:
     # Leer SIN encabezados
@@ -123,31 +136,70 @@ if uploaded_file:
     total_filas_original = len(df)
 
     # Nos quedamos solo con filas donde 'a' tenga algún valor no vacío
-    df = df[df['a'].notna() & (df['a'].astype(str).str.strip() != "")]
+    df = df[df["a"].notna() & (df["a"].astype(str).str.strip() != "")]
     df.reset_index(drop=True, inplace=True)
 
     total_filas = len(df)
     filtradas = total_filas_original - total_filas
 
     if filtradas > 0:
-        st.warning(f"Se eliminaron {filtradas} filas sin Sociedad en la primera columna (columna 'a').")
+        st.warning(
+            f"Se eliminaron {filtradas} filas sin Sociedad en la primera columna (columna 'a')."
+        )
 
     if df.empty:
-        st.error("Luego de eliminar filas sin Sociedad, el archivo quedó vacío. Revisá el archivo de origen.")
+        st.error(
+            "Luego de eliminar filas sin Sociedad, el archivo quedó vacío. Revisá el archivo de origen."
+        )
     else:
         # Vista previa
         st.write("Vista previa del archivo (ya filtrado sin filas sin Sociedad):")
         st.dataframe(df.head(100), use_container_width=True)
 
-        # Métricas inmediatas: filas y suma(columna 'o')
-        if 'o' in df.columns:
-            suma_o = pd.to_numeric(df['o'], errors='coerce').sum()
+        # -------------------- EXCLUIR CLIENTES (columna 'b') --------------------
+        clientes_excluir = []
+        if "b" in df.columns:
+            # Lista única, limpia y ordenada
+            clientes_unicos = (
+                df["b"].dropna().astype(str).map(lambda x: x.strip())
+            )
+            clientes_unicos = sorted([c for c in clientes_unicos if c != ""])
+
+            clientes_excluir = st.multiselect(
+                "Clientes a excluir (columna 'b')",
+                options=clientes_unicos,
+                default=[],
+                help="Seleccioná uno o más valores de la columna 'b' para excluirlos de la carga.",
+            )
+
+            if clientes_excluir:
+                filas_excluir = (
+                    df["b"].astype(str).str.strip().isin(clientes_excluir)
+                ).sum()
+                st.info(
+                    f"Se excluirán {len(clientes_excluir)} cliente(s). "
+                    f"Filas a excluir: {filas_excluir}"
+                )
+        else:
+            st.warning("No se encontró la columna 'b' en el archivo. No se puede excluir clientes.")
+
+        # DF para métricas/carga considerando exclusiones
+        df_to_load = df.copy()
+        if "b" in df_to_load.columns and clientes_excluir:
+            df_to_load["b"] = df_to_load["b"].astype(str).str.strip()
+            df_to_load = df_to_load[~df_to_load["b"].isin(clientes_excluir)].reset_index(
+                drop=True
+            )
+
+        # Métricas: filas y suma(columna 'o') considerando exclusiones
+        if "o" in df_to_load.columns:
+            suma_o = pd.to_numeric(df_to_load["o"], errors="coerce").sum()
             st.markdown(
                 f"<div style='color:#64352c; font-weight:bold; margin:10px 0;'>"
-                f"Filas válidas (con Sociedad): <strong>{total_filas}</strong> &nbsp;|&nbsp; "
+                f"Filas a cargar (con Sociedad y sin excluidos): <strong>{len(df_to_load)}</strong> &nbsp;|&nbsp; "
                 f"Suma de <strong>o</strong>: <strong>{suma_o:.2f}</strong>"
                 f"</div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
         else:
             st.error(
@@ -158,58 +210,65 @@ if uploaded_file:
         # Confirmación
         if st.button("Subir y Actualizar Repositorio", type="primary"):
             try:
-                if df.empty:
-                    st.warning("El archivo no tiene filas válidas para cargar (todas fueron filtradas).")
-                else:
-                    # Guardar CSV temporal sin encabezados (importa por posición)
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", encoding="utf-8", newline="\n") as tmp:
-                        df.to_csv(tmp.name, index=False, header=False)
-                        temp_path = tmp.name
+                if df_to_load.empty:
+                    st.warning(
+                        "No hay filas válidas para cargar (quedó vacío luego de filtros/exclusiones)."
+                    )
+                    st.stop()
 
-                    # Conectar a MySQL
-                    conn = open_connection()
-                    cur = conn.cursor()
+                # Guardar CSV temporal sin encabezados (importa por posición)
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".csv", mode="w", encoding="utf-8", newline="\n"
+                ) as tmp:
+                    df_to_load.to_csv(tmp.name, index=False, header=False)
+                    temp_path = tmp.name
 
-                    # 1) TRUNCATE
-                    cur.execute("TRUNCATE TABLE `corven`.`crudo_ap`;")
+                # Conectar a MySQL
+                conn = open_connection()
+                cur = conn.cursor()
 
-                    # 2) LOAD DATA LOCAL INFILE (sin IGNORE 1 ROWS, porque no hay encabezados)
-                    csv_path = temp_path.replace("\\", "\\\\")  # por si Windows
-                    load_sql = f"""
-                    LOAD DATA LOCAL INFILE '{csv_path}'
-                    INTO TABLE `corven`.`crudo_ap`
-                    CHARACTER SET utf8mb4
-                    FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '"'
-                    LINES TERMINATED BY '\\n';
-                    """
-                    cur.execute(load_sql)
+                # 1) TRUNCATE
+                cur.execute("TRUNCATE TABLE `corven`.`crudo_ap`;")
 
-                    # 3) Contar filas con FechaDoc inconsistente (0000-00-00) ANTES del delete
-                    cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
-                    retenidas = cur.fetchone()[0]
+                # 2) LOAD DATA LOCAL INFILE (sin IGNORE 1 ROWS, porque no hay encabezados)
+                csv_path = temp_path.replace("\\", "\\\\")  # por si Windows
+                load_sql = f"""
+                LOAD DATA LOCAL INFILE '{csv_path}'
+                INTO TABLE `corven`.`crudo_ap`
+                CHARACTER SET utf8mb4
+                FIELDS TERMINATED BY ',' ENCLOSED BY '"' ESCAPED BY '"'
+                LINES TERMINATED BY '\\n';
+                """
+                cur.execute(load_sql)
 
-                    # 4) Limpieza post-carga
-                    cur.execute("DELETE FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
+                # 3) Contar filas con FechaDoc inconsistente (0000-00-00) ANTES del delete
+                cur.execute(
+                    "SELECT COUNT(*) FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';"
+                )
+                retenidas = cur.fetchone()[0]
 
-                    conn.commit()
+                # 4) Limpieza post-carga
+                cur.execute("DELETE FROM `corven`.`crudo_ap` WHERE `FechaDoc` = '0000-00-00';")
 
-                    # Guardar el número de filas retenidas en session_state para mostrarlo en el botón rojo
-                    st.session_state["filas_inconsistentes"] = retenidas
+                conn.commit()
 
-                    # Contar filas cargadas finales
-                    cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap`;")
-                    total = cur.fetchone()[0]
+                # Guardar el número de filas retenidas en session_state para mostrarlo en el botón rojo
+                st.session_state["filas_inconsistentes"] = retenidas
 
-                    cur.close()
-                    conn.close()
+                # Contar filas cargadas finales
+                cur.execute("SELECT COUNT(*) FROM `corven`.`crudo_ap`;")
+                total = cur.fetchone()[0]
 
-                    # Limpiar archivo temporal
-                    try:
-                        os.remove(temp_path)
-                    except Exception:
-                        pass
+                cur.close()
+                conn.close()
 
-                    st.success(f"Carga completada. Filas actuales en `corven`.`crudo_ap`: {total}.")
+                # Limpiar archivo temporal
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+
+                st.success(f"Carga completada. Filas actuales en `corven`.`crudo_ap`: {total}.")
 
             except Exception as e:
                 st.error(f"Error durante la carga: {e}")
@@ -224,5 +283,5 @@ if uploaded_file:
                 </button>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
